@@ -37,6 +37,13 @@ def staging():
     env.master = 'ec2-54-93-66-254.eu-central-1.compute.amazonaws.com'
     env.hosts = [env.master]
 
+@task
+def testing():
+    """TEMPORARY - for testing the open source deploy changes"""
+    env.environment = 'testing'
+    env.master = 'ec2-54-152-72-255.compute-1.amazonaws.com'
+    env.hosts = [env.master]
+
 
 @task
 def production():
@@ -45,41 +52,6 @@ def production():
     # To change the domain, see conf/pillar/<envname>/env.sls
     # env.master = 'serviceinfo.rescue.org'
     env.master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
-    env.hosts = [env.master]
-
-
-def get_vagrant_ssh_config_value(name):
-    """
-    Return the value of the named ssh config parm from vagrant.
-    (Run 'vagrant ssh-config' to see what the available parms are.)
-    """
-    cmd = "vagrant ssh-config | awk '/ %s / {print $2;}'" % name
-    return subprocess.check_output(cmd, shell=True).strip()
-
-
-@task
-def vagrant_first_time():
-    # Use this the first time deploying to the vagrant VM, it'll
-    # use Vagrant's default ssh user.  After that, you can use the
-    # 'vagrant' target and connect in as your own user.
-    env.environment = 'vagrant'
-
-    # Use built-in vagrant ssh.  This'll probably use the local
-    # port 2222 that redirects to wherever vagrant is listening
-    # for ssh connections, but we don't really care.
-    env.user = get_vagrant_ssh_config_value('User')
-    host = get_vagrant_ssh_config_value('HostName')
-    port = get_vagrant_ssh_config_value('Port')
-    env.hosts = ['{user}@{host}:{port}'.format(user=env.user, host=host, port=port)]
-    env.key_filename = get_vagrant_ssh_config_value('IdentityFile')
-    env.master = host
-
-
-@task
-def vagrant():
-    # Use dev's own user, directly to port 22 on the VM
-    env.environment = 'vagrant'
-    env.master = '33.33.33.10'
     env.hosts = [env.master]
 
 
@@ -258,61 +230,6 @@ def deploy(loglevel=DEFAULT_SALT_LOGLEVEL):
     target = "-G 'environment:{0}'".format(env.environment)
     salt('saltutil.sync_all', target, loglevel)
     highstate(target)
-
-
-@task
-def build():
-    local("gulp build")
-
-
-@task
-def makemessages():
-    """
-    Find all the translatable English messages in our source and
-    pull them out into locale/en/LC_MESSAGES/django.po
-    """
-    local("python manage.py makemessages --ignore 'conf/*' --ignore 'docs/*' "
-          "--ignore 'requirements/*' --ignore 'frontend/*' --ignore 'vagrant/*' "
-          "--ignore 'node_modules/*'"
-          "--no-location --no-obsolete "
-          "-l en")
-    local("i18next-conv -s frontend/locales/en/translation.json -t "
-          "locale/en/LC_MESSAGES/frontend.po -l en")
-
-
-@task
-def pushmessages():
-    """
-    Upload the latest locale/en/LC_MESSAGES/django.po to Transifex
-    """
-    local("tx push -s")
-
-
-@task
-def pullmessages():
-    """
-    Pull the latest locale/ar/LC_MESSAGES/django.po and
-    locale/fr/LC_MESSAGES/django.po from Transifex.
-
-    Then take the updated frontend.po files and update the
-    french and arabic translation.json files.
-    """
-    local("tx pull -af")
-    for lang in ('fr', 'ar'):
-        local("i18next-conv "
-              " -t frontend/locales/%(lang)s/translation.json"
-              " -s locale/%(lang)s/LC_MESSAGES/frontend.po"
-              " -l %(lang)s" % locals())
-    execute(compilemessages)
-
-
-@task
-def compilemessages():
-    """
-    Compile all the .po files into the .mo files that Django
-    will get translated messages from at runtime.
-    """
-    local("python manage.py compilemessages -l en -l ar -l fr")
 
 
 @task

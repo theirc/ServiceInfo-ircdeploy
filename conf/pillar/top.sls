@@ -2,11 +2,11 @@ base:
   "*":
     - project
     - devs
-  'environment:vagrant':
-    - match: grain
-    - vagrant.env
-    - vagrant.secrets
   'environment:staging':
+    - match: grain
+    - staging.env
+    - staging.secrets
+  'environment:testing':
     - match: grain
     - staging.env
     - staging.secrets

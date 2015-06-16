@@ -7,7 +7,7 @@ Overview
 
 This project is deployed on the following stack.
 
-- OS: Ubuntu 14.04 LTS
+- OS: Ubuntu 12.04 LTS
 - Python: 3.4
 - Database: Postgres 9.3
 - Application Server: Gunicorn
@@ -17,59 +17,21 @@ This project is deployed on the following stack.
 These services can configured to run together on a single machine or on different machines.
 `Supervisord <http://supervisord.org/>`_ manages the application server process.
 
+We've used this AWS AMI:
+
+ubuntu/images/ebs/ubuntu-precise-12.04-amd64-server-20140408-5cc062dc-4b61-4424-bc43-416e51483a1f-ami-5db4a934.2 - ami-2b0b1442
+
 
 Initial Setup
 ------------------------
 
-Before your project can be deployed to a server, the code needs to be
-accessible in a git repository. Once that is done you should update
-``conf/pillar/<environment>/env.sls`` to set the repo and branch for the environment.
-E.g., change this::
-
-    # FIXME: Update to the correct project repo
-    repo:
-      url: git@github.com:CHANGEME/CHANGEME.git
-      branch: master
-
-to this::
-
-    repo:
-      url: git@github.com:account/reponame.git
-      branch: master
-
-The repo will also need a deployment key generated so that the Salt minion can
-access the repository. You can generate a deployment key locally for the new
-server like so::
-
-    ssh-keygen -t rsa -b 4096 -f <servername>
-
-This will generate two files named ``<servername>`` and ``<servername>.pub``.
-The first file contains the private key and the second file contains the public
-key. The public key needs to be added to the "Deploy keys" in the GitHub repository.
-For more information, see the Github docs on managing deploy keys:
-https://help.github.com/articles/managing-deploy-keys
-
-The text in the private key file should be added to `conf/pillar/<environment>/secrets.sls``
-under the label `github_deploy_key`, e.g.::
-
-    github_deploy_key: |
-      -----BEGIN RSA PRIVATE KEY-----
-      foobar
-      -----END RSA PRIVATE KEY-----
-
-There will be more information on the secrets in a later section. You may choose
-to include the public SSH key inside the repo itself as well, but this is not
-strictly required.
-
-You also need to set ``project_name`` and ``python_version`` in ``conf/pillar/project.sls``.
-Currently we support using Python 2.7 or Python 3.3. The project template is set up for 2.7 by
-default. If you want to use 3.3, you will need to change ``python_version`` and make a few changes
-to requirements. In ``requirements/production.txt``, change python-memcached to python3-memcached.
-In ``requirements/dev.txt``, remove Fabric and all its dependencies. Instead you will need Fabric
+This project uses Python 3.3.  Because Fabric does not support Python 3, you will need Fabric
 installed on your laptop "globally" so that when you run ``fab``, it will not be found in your
-virtualenv, but will then be found in your global environment.
+virtualenv, but will then be found in your global environment::
 
-For the environment you want to setup you will need to set the ``domain`` in
+    sudo pip install fabric
+
+For the environment you want to setup, you will need to set the ``domain`` in
 ``conf/pillar/<environment>/env.sls``.
 
 You will also need add the developer's user names and SSH keys to ``conf/pillar/devs.sls``. Each
@@ -148,11 +110,16 @@ How this is done will depend on where the server is hosted.
 VPS providers such as Linode will give you a username/password combination. Amazon's
 EC2 uses a private key. These credentials will be passed as command line arguments.::
 
-    # Template of the command
+Template of the command::
+
     fab -H <fresh-server-ip> -u <root-user> setup_master
-    # Example of provisioning 33.33.33.10 as the Salt Master
+
+Example of provisioning 33.33.33.10 as the Salt Master::
+
     fab -H 33.33.33.10 -u root setup_master
-    # Example AWS setup
+
+Example AWS setup::
+
     fab -H 54.235.72.124 -u ubuntu -i ~/.ssh/caktus-deployment.pem setup_master
 
 This will install salt-master and update the master configuration file. The master will use a
