@@ -90,5 +90,5 @@ create-{{ extension }}-extension:
 {% endif %}
       - postgres_database: database-{{ pillar['project_name'] }}
     - require_in:
-      - virtualenv: venv
+      - cmd: make_the_venv
 {% endfor %}

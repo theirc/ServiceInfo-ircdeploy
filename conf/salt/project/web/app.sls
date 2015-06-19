@@ -15,7 +15,7 @@ gunicorn_requirements:
     - bin_env: {{ vars.venv_dir }}
     - upgrade: true
     - require:
-      - virtualenv: venv
+      - cmd: make_the_venv
 
 gunicorn_conf:
   file.managed:
@@ -50,34 +50,23 @@ app_allow-{{ host_addr }}:
       - pkg: ufw
 {% endfor %}
 
-# node_ppa:
-#   pkgrepo.managed:
-#     - ppa: chris-lea/node.js
-
-npm:
-  pkg.installed:
-    - refresh: True
+node_ppa:
+  pkgrepo.managed:
+    - ppa: chris-lea/node.js
+    - require_in:
+        - pkg: nodejs
 
 nodejs:
-  pkg.installed:
-    - require:
-      - pkg: npm
+  pkg.latest:
     - refresh: True
-
-node_alias:
-  # Stupid ubuntu (http://askubuntu.com/questions/235655/node-js-conflicts-sbin-node-vs-usr-bin-node/320271#320271)
-  cmd.run:
-    - name: update-alternatives --install /usr/bin/node node /usr/bin/nodejs 10
-    - require:
-        - pkg: nodejs
 
 less:
   cmd.run:
-    - name: npm install less@1.5.1 -g
+    - name: npm install less@{{ pillar['less_version'] }} -g
     - user: root
-    - unless: "which lessc && lessc --version | grep 1.5.1"
+    - unless: "which lessc && lessc --version | grep {{ pillar['less_version'] }}"
     - require:
-      - cmd: node_alias
+      - pkg: nodejs
 
 # Need to run install in case this is the first time, and
 # update in case it's not the first time.  Unfortunately there's
@@ -89,7 +78,7 @@ npm_installs:
     - cwd: "{{ vars.source_dir }}"
     - user: {{ pillar['project_name'] }}
     - require:
-      - cmd: node_alias
+      - pkg: nodejs
 
 make_bundle:
   cmd.run:

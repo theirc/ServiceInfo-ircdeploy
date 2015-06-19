@@ -4,7 +4,7 @@ environment: production
 domain: serviceinfo.rescue.org
 
 repo:
-  url: git@github.com:theirc/ServiceInfo-project.git
+  url: https://github.com/theirc/ServiceInfo-project.git
   branch: master
 
 # Addtional public environment variables to set for the project

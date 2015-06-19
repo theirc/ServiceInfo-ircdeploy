@@ -1,13 +1,11 @@
 environment: staging
 
-domain: serviceinfo-staging.rescue.org
+domain: serviceinfo-testing.caktusgroup.com
 
 repo:
   url: https://github.com/theirc/ServiceInfo-project.git
-  branch: develop
+  branch: open_source_project
 
 # Addtional public environment variables to set for the project
 env:
   FOO: BAR
-
-# IRC Frankfurt: 54.93.66.254

@@ -146,7 +146,9 @@ To provision the master server itself with salt you need to create a minion on t
     fab -H <ip-of-new-master> -u <root-user> --set environment=master setup_minion:salt-master
     fab -u <root-user> accept_key:<server-name>
     fab -u <root-user> --set environment=master deploy
-    # Example AWS setup
+
+Example AWS setup::
+
     fab -H 54.235.72.124 -u ubuntu -i ~/.ssh/caktus-deployment.pem --set environment=master setup_minion:salt-master
     fab -H 54.235.72.124 -u ubuntu -i ~/.ssh/caktus-deployment.pem --set environment=master deploy
 
@@ -164,8 +166,11 @@ to complete the provisioning. To setup a minion you call the Fabric command::
 
     fab <environment> setup_minion:<roles> -H <ip-of-new-server> -u <root-user>
     fab staging setup_minion:web,balancer,db-master,cache -H  33.33.33.10 -u root
-    # Example AWS setup
-    fab staging setup_minion:web,balancer,db-master,cache,queue,worker -H 54.235.72.124
+
+
+Example AWS setup::
+
+    fab staging setup_minion:web,balancer,db-master,cache,queue,worker
 
 The available roles are ``salt-master``, ``web``, ``worker``, ``balancer``, ``db-master``,
 ``queue`` and ``cache``. If you are running everything on a single server you need to enable
@@ -176,7 +181,7 @@ Additional roles can be added later to a server via ``add_role``. Note that ther
 corresponding ``delete_role`` command because deleting a role does not disable the services or
 remove the configuration files of the deleted role::
 
-    fab add_role:web -H  33.33.33.10
+    fab add_role:web
 
 After that you can run the deploy/highstate to provision the new server::
 

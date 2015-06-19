@@ -9,31 +9,31 @@ python-pkgs:
   pkg:
     - installed
     - names:
-      - python{{ pillar['python_version'] }}
-      - python{{ pillar['python_version'] }}-dev
+      - python{{ pillar['python_version'] }}-complete
     - require:
       - pkgrepo: deadsnakes
 
-venv:
-  virtualenv.managed:
-    - name: {{ vars.venv_dir }}
-    - python: {{ '/usr/bin/python' ~ pillar['python_version'] }}
-    - user: {{ pillar['project_name'] }}
+# The virtualenv from Ubuntu 12.04 doesn't seem up to installing Python 3.4 stuff...
+# Create our venv our own way. Once it's created, we can use its pip from then on.
+make_the_venv:
+  cmd.run:
+    - name: pyvenv-3.4 {{ vars.venv_dir }}
+    - unless:
+      - test -x {{ vars.venv_dir }}/bin/pip
+    - check_cmd:
+      - test -x {{ vars.venv_dir }}/bin/pip
     - require:
-      - pip: virtualenv
       - file: root_dir
       - file: project_repo
       - pkg: python-pkgs
-      - pkg: python-headers
 
 pip_requirements:
   pip.installed:
-    - bin_env: {{ vars.venv_dir }}
+    - bin_env: {{ vars.venv_dir }}/bin/pip
     - requirements: {{ vars.build_path(vars.source_dir, 'requirements/production.txt') }}
     - upgrade: true
     - require:
-      - virtualenv: venv
-      - file: project_repo
+      - cmd: make_the_venv
 
 project_path:
   file.managed:
