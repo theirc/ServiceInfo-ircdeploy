@@ -7,7 +7,7 @@ Overview
 
 This project is deployed on the following stack.
 
-- OS: Ubuntu 12.04 LTS
+- OS: Ubuntu 14.04 LTS
 - Python: 3.4
 - Database: Postgres 9.3
 - Application Server: Gunicorn
@@ -19,8 +19,7 @@ These services can configured to run together on a single machine or on differen
 
 We've used this AWS AMI:
 
-ubuntu/images/ebs/ubuntu-precise-12.04-amd64-server-20140408-5cc062dc-4b61-4424-bc43-416e51483a1f-ami-5db4a934.2 - ami-2b0b1442
-
+    ubuntu-trusty-14.04-amd64-server-20140927 (ami-b83c0aa5)
 
 Initial Setup
 ------------------------

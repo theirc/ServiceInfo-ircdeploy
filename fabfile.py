@@ -1,6 +1,8 @@
 import os
+import re
 import subprocess
 import tempfile
+from fabric.contrib.files import exists
 
 import yaml
 
@@ -11,6 +13,7 @@ from fabric.contrib.console import confirm
 from fabric.utils import abort
 
 DEFAULT_SALT_LOGLEVEL = 'info'
+SALT_VERSION = '2015.5.1'
 PROJECT_NAME = "service_info"
 PROJECT_ROOT = os.path.dirname(__file__)
 CONF_ROOT = os.path.join(PROJECT_ROOT, 'conf')
@@ -41,7 +44,7 @@ def staging():
 def testing():
     """TEMPORARY - for testing the open source deploy changes"""
     env.environment = 'testing'
-    env.master = 'ec2-54-152-72-255.compute-1.amazonaws.com'
+    env.master = 'serviceinfo-testing.caktusgroup.com'
     env.hosts = [env.master]
 
 
@@ -55,34 +58,86 @@ def production():
     env.hosts = [env.master]
 
 
+def get_salt_version(command):
+    """Run `command` --version, pick out the part of the output that is digits and dots,
+    and return it as a string.
+    If the command fails, return None.
+    """
+    with settings(warn_only=True):
+        with hide('running', 'stdout', 'stderr'):
+            result = run('%s --version' % command)
+            if result.succeeded:
+                return re.search(r'(\d)', result).group(0)
+
+
+@task
+def install_salt(version, master=False, minion=False, restart=True):
+    """
+    Install or upgrade Salt minion and/or master if needed.
+
+    :param version: Version string, just numbers and dots, no leading 'v'.  E.g. "2015.5.0".
+      THERE IS NO DEFAULT, you must pick a version.
+    :param master: If True, include master in the install.
+    :param minion: If True, include minion in the install.
+    :param restart: If we don't need to reinstall a salt package, restart its server anyway.
+    :returns: True if any changes were made, False if nothing was done.
+    """
+    master_version = None
+    install_master = False
+    if master:
+        master_version = get_salt_version("salt")
+        install_master = master_version != version
+        if install_master and master_version:
+            # Already installed - if Ubuntu package, uninstall current version first
+            # because we're going to do a git install later
+            sudo("apt-get purge salt-master -y")
+        if restart and not install_master:
+            sudo("service salt-master restart")
+
+    minion_version = None
+    install_minion = False
+    if minion:
+        minion_version = get_salt_version('salt-minion')
+        install_minion = minion_version != version
+        if install_minion and minion_version:
+            # Already installed - if Ubuntu package, uninstall current version first
+            # because we're going to do a git install later
+            sudo("apt-get purge salt-minion -y")
+        if restart and not install_minion:
+            sudo("service salt-minion restart")
+
+    if install_master or install_minion:
+        args = []
+        if install_master:
+            args.append('-M')
+        if not install_minion:
+            args.append('-N')
+        args = ' '.join(args)
+        # To update local install_salt.sh: wget -O install_salt.sh https://bootstrap.saltstack.com
+        # then inspect it
+        put(local_path="install_salt.sh", remote_path="install_salt.sh")
+        sudo("sh install_salt.sh -D {args} git v{version}".format(args=args, version=version))
+        return True
+    return False
+
+
 @task
 def setup_master():
     """Provision master with salt-master."""
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            installed = run('which salt')
-    if not installed:
-        sudo('apt-get update -qq -y')
-        sudo('apt-get install python-software-properties -qq -y')
-        sudo('add-apt-repository ppa:saltstack/salt -y')
-        sudo('apt-get update -qq')
-        sudo('apt-get install salt-master -qq -y')
-    # make sure git is installed for gitfs
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            installed = run('which git')
-    if not installed:
-        sudo('apt-get install python-pip git-core -qq -y')
-        sudo('pip install -q -U GitPython')
+
+    # Get config onto system before the bootstrap tries to start salt
+    sudo("mkdir -p /etc/salt")
     put(local_path='conf/master.conf', remote_path="/etc/salt/master", use_sudo=True)
-    sudo('service salt-master restart')
+    # If no changes, restart salt-master anyway
+    install_salt(SALT_VERSION, master=True, restart=True)
 
 
 @task
 def sync():
-    """Rysnc local states and pillar data to the master."""
+    """Rysnc local states and pillar data to the master, and checkout margarita."""
     # Check for missing local secrets so that they don't get deleted
     # project.rsync_project fails if host is not set
+    sudo("mkdir -p /srv")
     if not have_secrets():
         get_secrets()
     else:
@@ -96,7 +151,7 @@ def sync():
                     local('touch secrets.sls.remote')
                 with settings(warn_only=True):
                     result = local('diff -u secrets.sls.remote secrets.sls')
-                    if result.failed and not confirm(
+                    if result.failed and files.exists(remote_file) and not confirm(
                             red("Above changes will be made to secrets.sls. Continue?")):
                         abort("Aborted. File have been copied to secrets.sls.remote. " +
                               "Resolve conflicts, then retry.")
@@ -107,6 +162,7 @@ def sync():
     sudo('rm -rf /srv/salt /srv/pillar')
     sudo('mv /tmp/salt/* /srv/')
     sudo('rm -rf /tmp/salt/')
+    execute(margarita)
 
 
 def have_secrets():
@@ -137,17 +193,6 @@ def setup_minion(*roles):
     for r in roles:
         if r not in VALID_ROLES:
             abort('%s is not a valid server role for this project.' % r)
-    # install salt minion if it's not there already
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            installed = run('which salt-minion')
-    if not installed:
-        # install salt-minion from PPA
-        sudo('apt-get update -qq -y')
-        sudo('apt-get install python-software-properties -qq -y')
-        sudo('add-apt-repository ppa:saltstack/salt -y')
-        sudo('apt-get update -qq')
-        sudo('apt-get install salt-minion -qq -y')
     config = {
         'master': 'localhost' if env.master == env.host else env.master,
         'output': 'mixed',
@@ -156,14 +201,17 @@ def setup_minion(*roles):
             'roles': list(roles),
         },
         'mine_functions': {
-            'network.interfaces': []
+            'network.interfaces': [],
+            'network.ip_addrs': []
         },
     }
     _, path = tempfile.mkstemp()
     with open(path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
+    sudo("mkdir -p /etc/salt")
     put(local_path=path, remote_path="/etc/salt/minion", use_sudo=True)
-    sudo('service salt-minion restart')
+    # install salt minion if it's not there already
+    install_salt(SALT_VERSION, master=False, minion=True, restart=True)
     # queries server for its fully qualified domain name to get minion id
     key_name = run('python -c "import socket; print socket.getfqdn()"')
     execute(accept_key, key_name)
@@ -193,6 +241,13 @@ def add_role(name):
 
 
 @task
+def margarita():
+    require('environment')
+    execute(state, 'margarita')
+    sudo('service salt-master restart')
+
+
+@task
 def salt(cmd, target="'*'", loglevel=DEFAULT_SALT_LOGLEVEL):
     """Run arbitrary salt commands."""
     with settings(warn_only=True):
@@ -204,6 +259,11 @@ def highstate(target="'*'", loglevel=DEFAULT_SALT_LOGLEVEL):
     """Run highstate on master."""
     print("This can take a long time without output, be patient")
     execute(salt, 'state.highstate', target, loglevel, hosts=[env.master])
+
+
+@task
+def state(name, target="'*'"):
+    salt('state.sls {}'.format(name), target)
 
 
 @task
