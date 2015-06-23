@@ -67,7 +67,7 @@ def get_salt_version(command):
         with hide('running', 'stdout', 'stderr'):
             result = run('%s --version' % command)
             if result.succeeded:
-                return re.search(r'(\d)', result).group(0)
+                return re.search(r'([\d\.]+)', result).group(0)
 
 
 @task
