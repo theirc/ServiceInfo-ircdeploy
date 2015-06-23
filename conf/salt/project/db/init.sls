@@ -1,5 +1,5 @@
 {% import 'project/_vars.sls' as vars with context %}
-{% set version=pillar.get("postgresql_version", "9.3") %}
+{% set pg_version=pillar.get("postgresql_version", "9.3") %}
 
 include:
   - postgresql
@@ -15,6 +15,8 @@ user-{{ pillar['project_name'] }}:
     - encrypted: True
     - require:
       - service: postgresql
+      - file: postgresql_conf
+      - file: hba_conf
 
 database-{{ pillar['project_name'] }}:
   postgres_database.present:
@@ -32,8 +34,9 @@ database-{{ pillar['project_name'] }}:
 
 hba_conf:
   file.managed:
-    - name: /etc/postgresql/{{ version }}/main/pg_hba.conf
+    - name: /etc/postgresql/{{ pg_version }}/main/pg_hba.conf
     - source: salt://project/db/pg_hba.conf
+    - makedirs: True
     - user: postgres
     - group: postgres
     - mode: 0640
@@ -46,23 +49,30 @@ hba_conf:
 {% endfor %}
     - require:
       - pkg: postgresql
+{% if pg_version|float < 9.3 %}
+# At least with 9.3, the default DB cluster is UTF-8 so we don't need all this mess
       - cmd: /var/lib/postgresql/configure_utf-8.sh
+{% endif %}
     - watch_in:
       - service: postgresql
 
 postgresql_conf:
   file.managed:
-    - name: /etc/postgresql/{{ version }}/main/postgresql.conf
+    - name: /etc/postgresql/{{ pg_version }}/main/postgresql.conf
     - source: salt://project/db/postgresql.conf
+    - makedirs: True
     - user: postgres
     - group: postgres
     - mode: 0644
     - template: jinja
     - context:
-      version: {{ version }}
+        version: {{ pg_version }}
     - require:
       - pkg: postgresql
+{% if pg_version|float < 9.3 %}
+# At least with 9.3, the default DB cluster is UTF-8 so we don't need all this mess
       - cmd: /var/lib/postgresql/configure_utf-8.sh
+{% endif %}
     - watch_in:
       - service: postgresql
 
