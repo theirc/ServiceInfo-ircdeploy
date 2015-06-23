@@ -1,7 +1,9 @@
-{% set version=pillar.get("postgresql_version", "9.3") %}
+{% set pg_version=pillar.get("postgresql_version", "9.3") %}
 
+{% if pg_version|float < 9.3 %}
 include:
   - locale.utf8
+{% endif %}
 
 postgresql-apt-repo:
   pkgrepo.managed:
@@ -13,7 +15,7 @@ db-packages:
   pkg:
     - installed
     - names:
-      - postgresql-{{ version }}
+      - postgresql-{{ pg_version }}
       - libpq-dev
     - require:
       - pkgrepo: postgresql-apt-repo
@@ -21,10 +23,12 @@ db-packages:
 postgresql:
   pkg:
     - installed
+    - name: postgresql-{{ pg_version }}
   service:
     - running
     - enable: True
 
+{% if pg_version|float < 9.3 %}
 /var/lib/postgresql/configure_utf-8.sh:
   cmd.wait:
     - name: bash /var/lib/postgresql/configure_utf-8.sh
@@ -44,22 +48,23 @@ postgresql:
     - mode: 755
     - template: jinja
     - context:
-        version: "{{ version }}"
+        version: "{{ pg_version }}"
     - require:
       - pkg: postgresql
+{% endif %}
 
 {% if 'postgis' in pillar['postgresql_extensions'] %}
 postgis-packages:
   pkg:
     - installed
     - names:
-      - postgresql-{{ version }}-postgis-2.1
+      - postgresql-{{ pg_version }}-postgis-2.1
       - binutils
       - libproj-dev
       - gdal-bin
       - libgeoip1
       - python-gdal
-      - postgresql-server-dev-{{ version }}
+      - postgresql-server-dev-{{ pg_version }}
     - require:
       - pkg: db-packages
 {% endif %}

@@ -1,6 +1,8 @@
 import os
+import re
 import subprocess
 import tempfile
+from fabric.contrib.files import exists
 
 import yaml
 
@@ -11,6 +13,7 @@ from fabric.contrib.console import confirm
 from fabric.utils import abort
 
 DEFAULT_SALT_LOGLEVEL = 'info'
+SALT_VERSION = '2015.5.1'
 PROJECT_NAME = "service_info"
 PROJECT_ROOT = os.path.dirname(__file__)
 CONF_ROOT = os.path.join(PROJECT_ROOT, 'conf')
@@ -37,6 +40,13 @@ def staging():
     env.master = 'ec2-54-93-66-254.eu-central-1.compute.amazonaws.com'
     env.hosts = [env.master]
 
+@task
+def testing():
+    """TEMPORARY - for testing the open source deploy changes"""
+    env.environment = 'testing'
+    env.master = 'serviceinfo-testing.caktusgroup.com'
+    env.hosts = [env.master]
+
 
 @task
 def production():
@@ -48,69 +58,86 @@ def production():
     env.hosts = [env.master]
 
 
-def get_vagrant_ssh_config_value(name):
+def get_salt_version(command):
+    """Run `command` --version, pick out the part of the output that is digits and dots,
+    and return it as a string.
+    If the command fails, return None.
     """
-    Return the value of the named ssh config parm from vagrant.
-    (Run 'vagrant ssh-config' to see what the available parms are.)
-    """
-    cmd = "vagrant ssh-config | awk '/ %s / {print $2;}'" % name
-    return subprocess.check_output(cmd, shell=True).strip()
+    with settings(warn_only=True):
+        with hide('running', 'stdout', 'stderr'):
+            result = run('%s --version' % command)
+            if result.succeeded:
+                return re.search(r'(\d)', result).group(0)
 
 
 @task
-def vagrant_first_time():
-    # Use this the first time deploying to the vagrant VM, it'll
-    # use Vagrant's default ssh user.  After that, you can use the
-    # 'vagrant' target and connect in as your own user.
-    env.environment = 'vagrant'
+def install_salt(version, master=False, minion=False, restart=True):
+    """
+    Install or upgrade Salt minion and/or master if needed.
 
-    # Use built-in vagrant ssh.  This'll probably use the local
-    # port 2222 that redirects to wherever vagrant is listening
-    # for ssh connections, but we don't really care.
-    env.user = get_vagrant_ssh_config_value('User')
-    host = get_vagrant_ssh_config_value('HostName')
-    port = get_vagrant_ssh_config_value('Port')
-    env.hosts = ['{user}@{host}:{port}'.format(user=env.user, host=host, port=port)]
-    env.key_filename = get_vagrant_ssh_config_value('IdentityFile')
-    env.master = host
+    :param version: Version string, just numbers and dots, no leading 'v'.  E.g. "2015.5.0".
+      THERE IS NO DEFAULT, you must pick a version.
+    :param master: If True, include master in the install.
+    :param minion: If True, include minion in the install.
+    :param restart: If we don't need to reinstall a salt package, restart its server anyway.
+    :returns: True if any changes were made, False if nothing was done.
+    """
+    master_version = None
+    install_master = False
+    if master:
+        master_version = get_salt_version("salt")
+        install_master = master_version != version
+        if install_master and master_version:
+            # Already installed - if Ubuntu package, uninstall current version first
+            # because we're going to do a git install later
+            sudo("apt-get purge salt-master -y")
+        if restart and not install_master:
+            sudo("service salt-master restart")
 
+    minion_version = None
+    install_minion = False
+    if minion:
+        minion_version = get_salt_version('salt-minion')
+        install_minion = minion_version != version
+        if install_minion and minion_version:
+            # Already installed - if Ubuntu package, uninstall current version first
+            # because we're going to do a git install later
+            sudo("apt-get purge salt-minion -y")
+        if restart and not install_minion:
+            sudo("service salt-minion restart")
 
-@task
-def vagrant():
-    # Use dev's own user, directly to port 22 on the VM
-    env.environment = 'vagrant'
-    env.master = '33.33.33.10'
-    env.hosts = [env.master]
+    if install_master or install_minion:
+        args = []
+        if install_master:
+            args.append('-M')
+        if not install_minion:
+            args.append('-N')
+        args = ' '.join(args)
+        # To update local install_salt.sh: wget -O install_salt.sh https://bootstrap.saltstack.com
+        # then inspect it
+        put(local_path="install_salt.sh", remote_path="install_salt.sh")
+        sudo("sh install_salt.sh -D {args} git v{version}".format(args=args, version=version))
+        return True
+    return False
 
 
 @task
 def setup_master():
     """Provision master with salt-master."""
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            installed = run('which salt')
-    if not installed:
-        sudo('apt-get update -qq -y')
-        sudo('apt-get install python-software-properties -qq -y')
-        sudo('add-apt-repository ppa:saltstack/salt -y')
-        sudo('apt-get update -qq')
-        sudo('apt-get install salt-master -qq -y')
-    # make sure git is installed for gitfs
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            installed = run('which git')
-    if not installed:
-        sudo('apt-get install python-pip git-core -qq -y')
-        sudo('pip install -q -U GitPython')
+
+    # Get config onto system before the bootstrap tries to start salt
+    sudo("mkdir -p /etc/salt")
     put(local_path='conf/master.conf', remote_path="/etc/salt/master", use_sudo=True)
-    sudo('service salt-master restart')
+    # If no changes, restart salt-master anyway
+    install_salt(SALT_VERSION, master=True, restart=True)
 
 
 @task
 def sync():
-    """Rysnc local states and pillar data to the master."""
+    """Rysnc local states and pillar data to the master, and checkout margarita."""
     # Check for missing local secrets so that they don't get deleted
     # project.rsync_project fails if host is not set
+    sudo("mkdir -p /srv")
     if not have_secrets():
         get_secrets()
     else:
@@ -124,7 +151,7 @@ def sync():
                     local('touch secrets.sls.remote')
                 with settings(warn_only=True):
                     result = local('diff -u secrets.sls.remote secrets.sls')
-                    if result.failed and not confirm(
+                    if result.failed and files.exists(remote_file) and not confirm(
                             red("Above changes will be made to secrets.sls. Continue?")):
                         abort("Aborted. File have been copied to secrets.sls.remote. " +
                               "Resolve conflicts, then retry.")
@@ -135,6 +162,7 @@ def sync():
     sudo('rm -rf /srv/salt /srv/pillar')
     sudo('mv /tmp/salt/* /srv/')
     sudo('rm -rf /tmp/salt/')
+    execute(margarita)
 
 
 def have_secrets():
@@ -165,17 +193,6 @@ def setup_minion(*roles):
     for r in roles:
         if r not in VALID_ROLES:
             abort('%s is not a valid server role for this project.' % r)
-    # install salt minion if it's not there already
-    with settings(warn_only=True):
-        with hide('running', 'stdout', 'stderr'):
-            installed = run('which salt-minion')
-    if not installed:
-        # install salt-minion from PPA
-        sudo('apt-get update -qq -y')
-        sudo('apt-get install python-software-properties -qq -y')
-        sudo('add-apt-repository ppa:saltstack/salt -y')
-        sudo('apt-get update -qq')
-        sudo('apt-get install salt-minion -qq -y')
     config = {
         'master': 'localhost' if env.master == env.host else env.master,
         'output': 'mixed',
@@ -184,14 +201,17 @@ def setup_minion(*roles):
             'roles': list(roles),
         },
         'mine_functions': {
-            'network.interfaces': []
+            'network.interfaces': [],
+            'network.ip_addrs': []
         },
     }
     _, path = tempfile.mkstemp()
     with open(path, 'w') as f:
         yaml.dump(config, f, default_flow_style=False)
+    sudo("mkdir -p /etc/salt")
     put(local_path=path, remote_path="/etc/salt/minion", use_sudo=True)
-    sudo('service salt-minion restart')
+    # install salt minion if it's not there already
+    install_salt(SALT_VERSION, master=False, minion=True, restart=True)
     # queries server for its fully qualified domain name to get minion id
     key_name = run('python -c "import socket; print socket.getfqdn()"')
     execute(accept_key, key_name)
@@ -221,6 +241,13 @@ def add_role(name):
 
 
 @task
+def margarita():
+    require('environment')
+    execute(state, 'margarita')
+    sudo('service salt-master restart')
+
+
+@task
 def salt(cmd, target="'*'", loglevel=DEFAULT_SALT_LOGLEVEL):
     """Run arbitrary salt commands."""
     with settings(warn_only=True):
@@ -232,6 +259,11 @@ def highstate(target="'*'", loglevel=DEFAULT_SALT_LOGLEVEL):
     """Run highstate on master."""
     print("This can take a long time without output, be patient")
     execute(salt, 'state.highstate', target, loglevel, hosts=[env.master])
+
+
+@task
+def state(name, target="'*'"):
+    salt('state.sls {}'.format(name), target)
 
 
 @task
@@ -258,61 +290,6 @@ def deploy(loglevel=DEFAULT_SALT_LOGLEVEL):
     target = "-G 'environment:{0}'".format(env.environment)
     salt('saltutil.sync_all', target, loglevel)
     highstate(target)
-
-
-@task
-def build():
-    local("gulp build")
-
-
-@task
-def makemessages():
-    """
-    Find all the translatable English messages in our source and
-    pull them out into locale/en/LC_MESSAGES/django.po
-    """
-    local("python manage.py makemessages --ignore 'conf/*' --ignore 'docs/*' "
-          "--ignore 'requirements/*' --ignore 'frontend/*' --ignore 'vagrant/*' "
-          "--ignore 'node_modules/*'"
-          "--no-location --no-obsolete "
-          "-l en")
-    local("i18next-conv -s frontend/locales/en/translation.json -t "
-          "locale/en/LC_MESSAGES/frontend.po -l en")
-
-
-@task
-def pushmessages():
-    """
-    Upload the latest locale/en/LC_MESSAGES/django.po to Transifex
-    """
-    local("tx push -s")
-
-
-@task
-def pullmessages():
-    """
-    Pull the latest locale/ar/LC_MESSAGES/django.po and
-    locale/fr/LC_MESSAGES/django.po from Transifex.
-
-    Then take the updated frontend.po files and update the
-    french and arabic translation.json files.
-    """
-    local("tx pull -af")
-    for lang in ('fr', 'ar'):
-        local("i18next-conv "
-              " -t frontend/locales/%(lang)s/translation.json"
-              " -s locale/%(lang)s/LC_MESSAGES/frontend.po"
-              " -l %(lang)s" % locals())
-    execute(compilemessages)
-
-
-@task
-def compilemessages():
-    """
-    Compile all the .po files into the .mo files that Django
-    will get translated messages from at runtime.
-    """
-    local("python manage.py compilemessages -l en -l ar -l fr")
 
 
 @task

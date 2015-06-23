@@ -1,7 +1,0 @@
-[run]
-branch = true
-omit = */tests/*, */migrations/*, fabfile.py, */settings/*, */wsgi.py
-source = .
-
-[report]
-show_missing = true
