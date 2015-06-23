@@ -2,6 +2,13 @@ ServiceInfo
 
 Release Notes
 
+0.2.5 - Jun. 23, 2015
+---------------------
+
+* New repo for the deploy files, ServiceInfo-ircdeploy
+* Add LICENSE file
+* Updates to the deploy code to get things working again
+
 0.2.4 - Jun. 10, 2015
 ---------------------
 
