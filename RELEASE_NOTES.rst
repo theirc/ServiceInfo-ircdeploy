@@ -2,6 +2,11 @@ ServiceInfo
 
 Release Notes
 
+0.2.6 - Jun. 25, 2015
+---------------------
+
+* Fix bug getting version of installed Salt.
+
 0.2.5 - Jun. 23, 2015
 ---------------------
 
