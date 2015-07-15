@@ -1,8 +1,6 @@
 import os
 import re
-import subprocess
 import tempfile
-from fabric.contrib.files import exists
 
 import yaml
 
@@ -39,6 +37,7 @@ def staging():
     # env.master = 'serviceinfo-staging.rescue.org'
     env.master = 'ec2-54-93-66-254.eu-central-1.compute.amazonaws.com'
     env.hosts = [env.master]
+
 
 @task
 def testing():
