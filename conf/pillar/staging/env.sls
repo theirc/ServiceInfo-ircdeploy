@@ -3,7 +3,7 @@ environment: staging
 domain: serviceinfo-staging.rescue.org
 
 repo:
-  url: https://github.com/theirc/ServiceInfo-project.git
+  url: https://github.com/theirc/ServiceInfo.git
   branch: develop
 
 # Addtional public environment variables to set for the project
