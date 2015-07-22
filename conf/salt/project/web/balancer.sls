@@ -122,7 +122,6 @@ nginx_conf:
         source_dir: "{{ vars.source_dir }}"
         log_dir: "{{ vars.log_dir }}"
         ssl_dir: "{{ vars.ssl_dir }}"
-        client_max_body_size: "5m"
         servers:
 {% for host, ifaces in vars.web_minions.items() %}
 {% set host_addr = vars.get_primary_ip(ifaces) %}
