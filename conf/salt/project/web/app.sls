@@ -2,7 +2,7 @@
 
 include:
   - supervisor.pip
-  - project.db
+  - project.postgres
   - project.dirs
   - project.venv
   - project.django
@@ -125,7 +125,6 @@ collectstatic:
       - file: manage
       - file: static_dir
       - cmd: make_bundle
-      - postgres_database: database-{{ pillar['project_name'] }}
 
 migrate:
   cmd.run:
@@ -135,7 +134,6 @@ migrate:
     - onlyif: "{{ vars.path_from_root('manage.sh') }} migrate --list | grep '\\[ \\]'"
     - require:
       - file: manage
-      - postgres_database: database-{{ pillar['project_name'] }}
     - order: last
 
 gunicorn_process:

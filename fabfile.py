@@ -21,7 +21,6 @@ VALID_ROLES = (
     'web',
     'worker',
     'balancer',
-    'db-master',
     'queue',
     'cache',
     'beat',
