@@ -13,12 +13,14 @@ postgres-packages:
       - postgresql-contrib-9.3
       - postgresql-server-dev-9.3
       - postgresql-client-9.3
+      - postgresql-9.3-postgis-2.1
       - postgresql-9.4
       - postgresql-contrib-9.4
       - postgresql-server-dev-9.4
+      - postgresql-9.4-postgis-2.1
+      - postgresql-common
 
 our-postgres-packages:
   pkg.latest:
     - names:
       - postgresql-client-{{ pg_version }}
-      - postgresql-{{ pg_version }}-postgis-2.1
