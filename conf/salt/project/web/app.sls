@@ -2,7 +2,7 @@
 
 include:
   - supervisor.pip
-  - project.postgres
+  - postgres
   - project.dirs
   - project.venv
   - project.django
