@@ -8,4 +8,4 @@ repo:
 
 # Additional public environment variables to set for the project
 env:
-  DB_HOST: irc-ire-prod.cq1sxobbggkx.eu-west-1.rds.amazonaws.com
+  DB_HOST: irc-frankfurt-rds.czmnyqulud6c.eu-central-1.rds.amazonaws.com
