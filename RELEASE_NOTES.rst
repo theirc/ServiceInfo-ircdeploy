@@ -2,6 +2,12 @@ ServiceInfo
 
 Release Notes
 
+0.2.7 - Oct. 22, 2015
+---------------------
+
+* Move databases to Amazon RDS.
+* Allow larger uploads.
+
 0.2.6 - Jun. 25, 2015
 ---------------------
 
