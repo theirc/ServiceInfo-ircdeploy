@@ -6,9 +6,9 @@
 postgres_repo:
   pkgrepo.managed:
     - humanname: Postgres PPA
-    - name: deb http://apt.postgresql.org/pub/repos/apt/ {{ grains['lsb_distrib_codename'] }}-pgdg main
-    - file: /etc/apt/sources.list.d/postgres.list
-    - key_url: salt://project/pgdg.pub
+    - name: 'deb http://apt.postgresql.org/pub/repos/apt/ {{ grains['oscodename'] }}-pgdg main'
+    - file: /etc/apt/sources.list.d/pgdg.list
+    - key_url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
     - require_in:
       - pkg: postgres-client-packages
 
