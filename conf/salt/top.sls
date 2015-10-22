@@ -16,11 +16,13 @@ base:
   'roles:web':
     - match: grain
     - project.web.app
+    - postgres
 {% if 'newrelic_license_key' in pillar['secrets'] %}
     - project.newrelic_webmon
 {% endif %}
   'roles:worker':
     - match: grain
+    - postgres
     - project.worker.default
   'roles:beat':
     - match: grain
@@ -28,9 +30,6 @@ base:
   'roles:balancer':
     - match: grain
     - project.web.balancer
-  'roles:db-master':
-    - match: grain
-    - project.db
   'roles:queue':
     - match: grain
     - project.queue

@@ -162,13 +162,13 @@ as a root user. This is to install the Salt Minion which will connect to the Mas
 to complete the provisioning. To setup a minion you call the Fabric command::
 
     fab <environment> setup_minion:<roles> -H <ip-of-new-server> -u <root-user>
-    fab staging setup_minion:web,balancer,db-master,cache -H  33.33.33.10 -u root
+    fab staging setup_minion:web,balancer,cache -H  33.33.33.10 -u root
     # Example AWS setup
-    fab staging setup_minion:web,balancer,db-master,cache,queue,worker -H 54.235.72.124
+    fab staging setup_minion:web,balancer,cache,queue,worker -H 54.235.72.124
 
-The available roles are ``salt-master``, ``web``, ``worker``, ``balancer``, ``db-master``,
+The available roles are ``salt-master``, ``web``, ``worker``, ``balancer``,
 ``queue`` and ``cache``. If you are running everything on a single server you need to enable
-the ``web``, ``balancer``, ``db-master``, and ``cache`` roles. The ``worker``
+the ``web``, ``balancer``, and ``cache`` roles. The ``worker``
 and ``queue`` roles are only needed to run Celery which is explained in more detail later.
 
 Additional roles can be added later to a server via ``add_role``. Note that there is no
