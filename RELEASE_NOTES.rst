@@ -2,6 +2,11 @@ ServiceInfo
 
 Release Notes
 
+0.2.8 - Oct. 22, 2015
+---------------------
+
+* Fix salt bug adding Postgres repo
+
 0.2.7 - Oct. 22, 2015
 ---------------------
 
