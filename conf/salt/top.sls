@@ -17,12 +17,14 @@ base:
     - match: grain
     - project.web.app
     - postgres
+    - project.elasticsearch
 {% if 'newrelic_license_key' in pillar['secrets'] %}
     - project.newrelic_webmon
 {% endif %}
   'roles:worker':
     - match: grain
     - postgres
+    - project.elasticsearch
     - project.worker.default
   'roles:beat':
     - match: grain
