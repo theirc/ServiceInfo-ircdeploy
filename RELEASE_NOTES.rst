@@ -2,6 +2,12 @@ ServiceInfo
 
 Release Notes
 
+0.2.9 - Dec. 30, 2015
+---------------------
+
+* Deploy Elasticsearch
+* Update nginx config to allow CMS on /
+
 0.2.8 - Oct. 22, 2015
 ---------------------
 
