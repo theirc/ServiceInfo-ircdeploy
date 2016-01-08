@@ -27,6 +27,10 @@ VALID_ROLES = (
 )
 
 
+def _common_env():
+    env.project = PROJECT_NAME
+
+
 @task
 def staging():
     env.environment = 'staging'
@@ -36,6 +40,7 @@ def staging():
     # env.master = 'serviceinfo-staging.rescue.org'
     env.master = 'ec2-54-93-66-254.eu-central-1.compute.amazonaws.com'
     env.hosts = [env.master]
+    _common_env()
 
 
 @task
@@ -44,6 +49,7 @@ def testing():
     env.environment = 'testing'
     env.master = 'serviceinfo-testing.caktusgroup.com'
     env.hosts = [env.master]
+    _common_env()
 
 
 @task
@@ -54,6 +60,7 @@ def production():
     # env.master = 'serviceinfo.rescue.org'
     env.master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
     env.hosts = [env.master]
+    _common_env()
 
 
 def get_salt_version(command):
@@ -311,3 +318,49 @@ def ssh():
     """
     require('environment')
     local("ssh %s" % env.hosts[0])
+
+
+@task
+def get_db_dump(clean=False):
+    """Get db dump of remote enviroment."""
+    require('environment')
+    db_name = '%(project)s_%(environment)s' % env
+    dump_file = db_name + '.sql' % env
+    project_root = os.path.join('/var', 'www', env.project)
+    temp_file = os.path.join(project_root, dump_file)
+    flags = '-Ox'
+    if clean:
+        flags += 'c'
+    dump_command = '/home/trawick/with_db.sh pg_dump %s %s -U %s > %s' % (flags, db_name, db_name, temp_file)
+    with settings(host_string=env.master):
+        sudo(dump_command, user=env.project)
+        get(temp_file, dump_file)
+
+
+@task
+def reset_local_db():
+    """ Reset local database from remote host """
+    require('environment')
+    question = 'Are you sure you want to reset your local ' \
+               'database with the %(environment)s database?' % env
+    if not confirm(question, default=False):
+        abort('Local database reset aborted.')
+    remote_db_name = '%(project)s_%(environment)s' % env
+    db_dump_name = remote_db_name + '.sql'
+    local_db_name = env.project
+    get_db_dump()
+    with settings(warn_only=True):
+        local('dropdb %s' % local_db_name)
+    local('createdb -E UTF-8 %s' % local_db_name)
+    local('psql %s -c "CREATE EXTENSION postgis;"' % local_db_name)
+    local('cat %s | psql %s' % (db_dump_name, local_db_name))
+
+
+@task
+def reset_local_media(service_info_directory):
+    """ Reset local media from remote host """
+    require('environment')
+    media_source = os.path.join('/var', 'www', env.project, 'public', 'media')
+    media_target = os.path.join(service_info_directory, 'public')
+    with settings():
+        local("rsync -rvaz %s:%s %s" % (env.master, media_source, media_target))
