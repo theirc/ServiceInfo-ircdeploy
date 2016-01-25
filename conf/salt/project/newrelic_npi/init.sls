@@ -18,6 +18,6 @@ install_npi:
 
 configure_npi:
   cmd.run:
-    - name: ./npi set license_key {{ pillar['secrets']['NEW_RELIC_LICENSE_KEY'] }} && ./npi set user {{ pillar['project_name'] }} && ./npi set distro debian
+    - name: ./npi set license_key {{ pillar['secrets']['newrelic_license_key'] }} && ./npi set user {{ pillar['project_name'] }} && ./npi set distro debian
     - cwd: /usr/share/npi
 {% endif %}
