@@ -28,3 +28,5 @@
 {% set worker_minions = salt['mine.get']('roles:worker', 'network.interfaces', expr_form='grain') %}
 {% set app_minions = salt['mine.get']('roles:(worker|web)', 'network.interfaces', expr_form='grain_pcre') %}
 {% set balancer_minions = salt['mine.get']('roles:balancer', 'network.interfaces', expr_form='grain') %}
+
+{% set use_newrelic = salt['pillar.get']('secrets:NEW_RELIC_LICENSE_KEY', False) %}
