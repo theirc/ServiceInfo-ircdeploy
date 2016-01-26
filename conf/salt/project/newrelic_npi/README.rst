@@ -10,7 +10,7 @@ If you want to install an NPI compatible plugin, include this state in
 your own state file::
 
     include:
-    - newrelic_npi
+    - project.newrelic_npi
 
 Then see the ``elasticsearch/init.sls`` file for an example of the rather convoluted
 way to use it to install a New Relic plugin.  (Anyone want to write an NPI state for
