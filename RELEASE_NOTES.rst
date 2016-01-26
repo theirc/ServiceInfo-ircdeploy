@@ -2,6 +2,11 @@ ServiceInfo
 
 Release Notes
 
+0.2.10 - Jan. 26, 2016
+----------------------
+
+* Enable New Relic monitoring of Elasticsearch
+
 0.2.9 - Dec. 30, 2015
 ---------------------
 
