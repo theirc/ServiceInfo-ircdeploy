@@ -5,7 +5,7 @@
 
 {% if monitor_with_newrelic %}
 include:
-  - newrelic_npi
+  - project.newrelic_npi
 {% endif %}
 
 elasticsearch-apt-repo:
