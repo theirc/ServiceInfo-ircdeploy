@@ -4,7 +4,7 @@ import tempfile
 
 import yaml
 
-from fabric.api import env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
+from fabric.api import cd, env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
 from fabric.colors import red
 from fabric.contrib import files, project
 from fabric.contrib.console import confirm
@@ -29,10 +29,13 @@ VALID_ROLES = (
 
 def _common_env():
     env.project = PROJECT_NAME
+    # refresh_environment() needs this even though the task is run against staging
+    env.production_master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
 
 
 @task
 def staging():
+    _common_env()
     env.environment = 'staging'
     # 54.93.66.254 Staging server on AWS Frankfurt
     # Internal hostname for our own access to the server
@@ -40,27 +43,26 @@ def staging():
     # env.master = 'serviceinfo-staging.rescue.org'
     env.master = 'ec2-54-93-66-254.eu-central-1.compute.amazonaws.com'
     env.hosts = [env.master]
-    _common_env()
 
 
 @task
 def testing():
     """TEMPORARY - for testing the open source deploy changes"""
+    _common_env()
     env.environment = 'testing'
     env.master = 'serviceinfo-testing.caktusgroup.com'
     env.hosts = [env.master]
-    _common_env()
 
 
 @task
 def production():
+    _common_env()
     env.environment = 'production'
     # Internal hostname for our own access to the server
     # To change the domain, see conf/pillar/<envname>/env.sls
     # env.master = 'serviceinfo.rescue.org'
-    env.master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
+    env.master = env.production_master
     env.hosts = [env.master]
-    _common_env()
 
 
 def get_salt_version(command):
@@ -320,6 +322,10 @@ def ssh():
     local("ssh %s" % env.hosts[0])
 
 
+def _get_db_wrapper():
+    return '/home/trawick/with_db.sh'
+
+
 @task
 def get_db_dump(clean=False):
     """Get db dump of remote enviroment."""
@@ -331,7 +337,7 @@ def get_db_dump(clean=False):
     flags = '-Ox'
     if clean:
         flags += 'c'
-    dump_command = '/home/trawick/with_db.sh pg_dump %s %s -U %s > %s' % (flags, db_name, db_name, temp_file)
+    dump_command = '%s pg_dump %s %s -U %s > %s' % (_get_db_wrapper(), flags, db_name, db_name, temp_file)
     with settings(host_string=env.master):
         sudo(dump_command, user=env.project)
         get(temp_file, dump_file)
@@ -364,3 +370,40 @@ def reset_local_media(service_info_directory):
     media_target = os.path.join(service_info_directory, 'public')
     with settings():
         local("rsync -rvaz %s:%s %s" % (env.master, media_source, media_target))
+
+
+@task
+def refresh_environment():
+    require('environment')
+    if env.environment == 'production':
+        abort('Production cannot be refreshed!')
+
+    db_name = '%(project)s_production' % env
+    dump_file_name = '%s.sql' % db_name
+    full_dump_file_path = os.path.join(env.project_root, dump_file_name)
+    prod_host = env.production_master
+    db_wrapper = _get_db_wrapper()
+
+    with settings(host_string=prod_host):
+        sudo('%s pg_dump -Ox %s -U %s > %s' % (db_wrapper, db_name, db_name, full_dump_file_path))
+
+    sudo('supervisorctl stop all')
+    db_name = db_user = '%s_%s' % (env.project, env.environment)
+    media_full_path = '%s/public/media' % env.project_root
+    with cd('/tmp'):
+        run('scp %s:%s %s' % (prod_host, full_dump_file_path, dump_file_name))
+        sudo('%s dropdb %s_backup' % (db_wrapper, db_name), user='postgres')
+        sudo('psql -c "alter database %s rename to %s_backup"' % (db_name, db_name),
+            user='postgres')
+        sudo('%s createdb -E UTF-8 -O %s %s' % (db_wrapper, db_user, db_name), user='postgres')
+        sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (db_wrapper, db_name), user='postgres')
+        sudo('%s psql -U %s -d %s -f %s' % (db_wrapper, db_user, db_name, dump_file_name))
+        run('rsync -zPae ssh %s:%s .' % (prod_host, media_full_path))
+        sudo('rm -rf %s.backup' % media_full_path)
+        sudo('mv %s %s.backup' % (media_full_path, media_full_path))
+        sudo('mv media %s' % media_full_path)
+        sudo('chown -R %s:%s %s' % (env.project, env.project, media_full_path))
+
+    manage_run("migrate")
+    manage_run("rebuild_index --noinput")
+    sudo('supervisorctl start all')
