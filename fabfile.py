@@ -323,7 +323,7 @@ def ssh():
 
 
 def _get_db_wrapper():
-    return '/home/trawick/with_db.sh'
+    return '/var/www/%s/run_with_db.sh' % env.project
 
 
 @task
