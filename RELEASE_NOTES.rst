@@ -2,6 +2,11 @@ ServiceInfo
 
 Release Notes
 
+0.2.11 - Feb. 26, 2016
+----------------------
+
+* Install run_with_db.sh script for accessing db from fab
+
 0.2.10 - Jan. 26, 2016
 ----------------------
 
