@@ -29,6 +29,9 @@ VALID_ROLES = (
 
 def _common_env():
     env.project = PROJECT_NAME
+    env.project_root = os.path.join('/var', 'www', env.project)
+    env.media_source = os.path.join(env.project_root, 'public', 'media')
+    env.db_wrapper = os.path.join(env.project_root, 'run_with_db.sh')
     # refresh_environment() needs this even though the task is run against staging
     env.production_master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
 
@@ -322,22 +325,17 @@ def ssh():
     local("ssh %s" % env.hosts[0])
 
 
-def _get_db_wrapper():
-    return '/var/www/%s/run_with_db.sh' % env.project
-
-
 @task
 def get_db_dump(clean=False):
     """Get db dump of remote enviroment."""
     require('environment')
     db_name = '%(project)s_%(environment)s' % env
     dump_file = db_name + '.sql' % env
-    project_root = os.path.join('/var', 'www', env.project)
-    temp_file = os.path.join(project_root, dump_file)
+    temp_file = os.path.join(env.project_root, dump_file)
     flags = '-Ox'
     if clean:
         flags += 'c'
-    dump_command = '%s pg_dump %s %s -U %s > %s' % (_get_db_wrapper(), flags, db_name, db_name, temp_file)
+    dump_command = '%s pg_dump %s %s -U %s > %s' % (env.db_wrapper, flags, db_name, db_name, temp_file)
     with settings(host_string=env.master):
         sudo(dump_command, user=env.project)
         get(temp_file, dump_file)
@@ -366,10 +364,9 @@ def reset_local_db():
 def reset_local_media(service_info_directory):
     """ Reset local media from remote host """
     require('environment')
-    media_source = os.path.join('/var', 'www', env.project, 'public', 'media')
     media_target = os.path.join(service_info_directory, 'public')
     with settings():
-        local("rsync -rvaz %s:%s %s" % (env.master, media_source, media_target))
+        local("rsync -rvaz %s:%s %s" % (env.master, env.media_source, media_target))
 
 
 @task
@@ -377,33 +374,29 @@ def refresh_environment():
     require('environment')
     if env.environment == 'production':
         abort('Production cannot be refreshed!')
+    env.source_environment = 'production'
 
-    db_name = '%(project)s_production' % env
-    dump_file_name = '%s.sql' % db_name
+    prod_db_name = '%(project)s_%(source_environment)s' % env
+    dump_file_name = '%s.sql' % prod_db_name
     full_dump_file_path = os.path.join(env.project_root, dump_file_name)
     prod_host = env.production_master
-    db_wrapper = _get_db_wrapper()
 
     with settings(host_string=prod_host):
-        sudo('%s pg_dump -Ox %s -U %s > %s' % (db_wrapper, db_name, db_name, full_dump_file_path))
+        sudo('%s pg_dump -Ox %s -U %s > %s' % (env.db_wrapper, prod_db_name, prod_db_name, full_dump_file_path))
 
-    sudo('supervisorctl stop all')
     db_name = db_user = '%s_%s' % (env.project, env.environment)
-    media_full_path = '%s/public/media' % env.project_root
     with cd('/tmp'):
         run('scp %s:%s %s' % (prod_host, full_dump_file_path, dump_file_name))
-        sudo('%s dropdb %s_backup' % (db_wrapper, db_name), user='postgres')
-        sudo('psql -c "alter database %s rename to %s_backup"' % (db_name, db_name),
-            user='postgres')
-        sudo('%s createdb -E UTF-8 -O %s %s' % (db_wrapper, db_user, db_name), user='postgres')
-        sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (db_wrapper, db_name), user='postgres')
-        sudo('%s psql -U %s -d %s -f %s' % (db_wrapper, db_user, db_name, dump_file_name))
-        run('rsync -zPae ssh %s:%s .' % (prod_host, media_full_path))
-        sudo('rm -rf %s.backup' % media_full_path)
-        sudo('mv %s %s.backup' % (media_full_path, media_full_path))
-        sudo('mv media %s' % media_full_path)
-        sudo('chown -R %s:%s %s' % (env.project, env.project, media_full_path))
+        with settings(warn_only=True):
+            sudo('%s dropdb %s_backup' % (env.db_wrapper, db_name))
+        sudo('%s psql -c "alter database %s rename to %s_backup"' % (env.db_wrapper, db_name, db_name))
+        sudo('%s createdb -E UTF-8 -O %s %s' % (env.db_wrapper, db_user, db_name))
+        sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (env.db_wrapper, db_name))
+        sudo('%s psql -U %s -d %s -f %s' % (env.db_wrapper, db_user, db_name, dump_file_name))
+        run('rsync -zPae ssh %s:%s .' % (prod_host, env.media_source))
+        sudo('rm -rf %s.backup' % env.media_source)
+        sudo('mv %s %s.backup' % (env.media_source, env.media_source))
+        sudo('mv media %s' % env.media_source)
+        sudo('chown -R %s:%s %s' % (env.project, env.project, env.media_source))
 
     manage_run("migrate")
-    manage_run("rebuild_index --noinput")
-    sudo('supervisorctl start all')
