@@ -2,6 +2,12 @@ ServiceInfo
 
 Release Notes
 
+0.2.12 - Sep. 13, 2017
+----------------------
+
+* Move docs to https://github.com/theirc/ServiceInfo repo
+* Add Caktus TS SSH key
+
 0.2.11 - Feb. 26, 2016
 ----------------------
 
