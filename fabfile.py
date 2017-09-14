@@ -4,7 +4,7 @@ import tempfile
 
 import yaml
 
-from fabric.api import env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
+from fabric.api import cd, env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
 from fabric.colors import red
 from fabric.contrib import files, project
 from fabric.contrib.console import confirm
@@ -27,8 +27,18 @@ VALID_ROLES = (
 )
 
 
+def _common_env():
+    env.project = PROJECT_NAME
+    env.project_root = os.path.join('/var', 'www', env.project)
+    env.media_source = os.path.join(env.project_root, 'public', 'media')
+    env.db_wrapper = os.path.join(env.project_root, 'run_with_db.sh')
+    # refresh_environment() needs this even though the task is run against staging
+    env.production_master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
+
+
 @task
 def staging():
+    _common_env()
     env.environment = 'staging'
     # 54.93.66.254 Staging server on AWS Frankfurt
     # Internal hostname for our own access to the server
@@ -41,6 +51,7 @@ def staging():
 @task
 def testing():
     """TEMPORARY - for testing the open source deploy changes"""
+    _common_env()
     env.environment = 'testing'
     env.master = 'serviceinfo-testing.caktusgroup.com'
     env.hosts = [env.master]
@@ -48,11 +59,12 @@ def testing():
 
 @task
 def production():
+    _common_env()
     env.environment = 'production'
     # Internal hostname for our own access to the server
     # To change the domain, see conf/pillar/<envname>/env.sls
     # env.master = 'serviceinfo.rescue.org'
-    env.master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
+    env.master = env.production_master
     env.hosts = [env.master]
 
 
@@ -311,3 +323,82 @@ def ssh():
     """
     require('environment')
     local("ssh %s" % env.hosts[0])
+
+
+@task
+def get_db_dump(clean=False):
+    """Get db dump of remote enviroment."""
+    require('environment')
+    db_name = '%(project)s_%(environment)s' % env
+    dump_file = db_name + '.sql' % env
+    temp_file = os.path.join(env.project_root, dump_file)
+    flags = '-Ox'
+    if clean:
+        flags += 'c'
+    dump_command = '%s pg_dump %s %s -U %s > %s' % (env.db_wrapper, flags, db_name, db_name, temp_file)
+    with settings(host_string=env.master):
+        sudo(dump_command, user=env.project)
+        get(temp_file, dump_file)
+
+
+@task
+def reset_local_db():
+    """ Reset local database from remote host """
+    require('environment')
+    question = 'Are you sure you want to reset your local ' \
+               'database with the %(environment)s database?' % env
+    if not confirm(question, default=False):
+        abort('Local database reset aborted.')
+    remote_db_name = '%(project)s_%(environment)s' % env
+    db_dump_name = remote_db_name + '.sql'
+    local_db_name = env.project
+    get_db_dump()
+    with settings(warn_only=True):
+        local('dropdb %s' % local_db_name)
+    local('createdb -E UTF-8 %s' % local_db_name)
+    local('psql %s -c "CREATE EXTENSION postgis;"' % local_db_name)
+    local('cat %s | psql %s' % (db_dump_name, local_db_name))
+
+
+@task
+def reset_local_media(service_info_directory):
+    """ Reset local media from remote host """
+    require('environment')
+    media_target = os.path.join(service_info_directory, 'public')
+    with settings():
+        local("rsync -rvaz %s:%s %s" % (env.master, env.media_source, media_target))
+
+
+@task
+def refresh_environment():
+    # NOTE: This command does not function yet.
+    # See: https://github.com/theirc/ServiceInfo-ircdeploy/pull/16#issue-125613744
+    require('environment')
+    if env.environment == 'production':
+        abort('Production cannot be refreshed!')
+    env.source_environment = 'production'
+
+    prod_db_name = '%(project)s_%(source_environment)s' % env
+    dump_file_name = '%s.sql' % prod_db_name
+    full_dump_file_path = os.path.join(env.project_root, dump_file_name)
+    prod_host = env.production_master
+
+    with settings(host_string=prod_host):
+        sudo('%s pg_dump -Ox %s -U %s > %s' % (env.db_wrapper, prod_db_name, prod_db_name, full_dump_file_path))
+
+    db_name = db_user = '%s_%s' % (env.project, env.environment)
+    with cd('/tmp'):
+        run('scp %s:%s %s' % (prod_host, full_dump_file_path, dump_file_name))
+        with settings(warn_only=True):
+            sudo('%s dropdb %s_backup' % (env.db_wrapper, db_name))
+        sudo('%s psql -c "alter database %s rename to %s_backup"' % (env.db_wrapper, db_name, db_name))
+        sudo('%s createdb -E UTF-8 -O %s %s' % (env.db_wrapper, db_user, db_name))
+        sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (env.db_wrapper, db_name))
+        sudo('%s psql -U %s -d %s -f %s' % (env.db_wrapper, db_user, db_name, dump_file_name))
+        run('rsync -zPae ssh %s:%s .' % (prod_host, env.media_source))
+        sudo('rm -rf %s.backup' % env.media_source)
+        sudo('mv %s %s.backup' % (env.media_source, env.media_source))
+        sudo('mv media %s' % env.media_source)
+        sudo('chown -R %s:%s %s' % (env.project, env.project, env.media_source))
+
+    manage_run("migrate")
