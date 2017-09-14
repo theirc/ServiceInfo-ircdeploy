@@ -371,6 +371,8 @@ def reset_local_media(service_info_directory):
 
 @task
 def refresh_environment():
+    # NOTE: This command does not function yet.
+    # See: https://github.com/theirc/ServiceInfo-ircdeploy/pull/16#issue-125613744
     require('environment')
     if env.environment == 'production':
         abort('Production cannot be refreshed!')
