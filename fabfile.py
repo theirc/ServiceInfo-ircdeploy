@@ -396,6 +396,7 @@ def refresh_environment(project_path=None):
             sudo('%s pg_dump -Ox %s -U %s > %s' % (env.db_wrapper, prod_db_name, prod_db_name, prod_dump_file_path))
             get(prod_dump_file_path, dump_file_name)
             get(env.media_source, media_path)
+            sudo('rm -f %s' % prod_dump_file_path)
     else:
         # We are refreshing from files in the local project_path directory
         current_dump_path = os.path.join(project_path, dump_file_name)
@@ -409,12 +410,12 @@ def refresh_environment(project_path=None):
         sudo('supervisorctl stop all')
 
         # Backup DB, create fresh DB, and install dump into it
-        with settings(warn_only=True):
-            sudo('%s dropdb %s_backup' % (env.db_wrapper, db_name))
+        sudo('%s dropdb --if-exists %s_backup' % (env.db_wrapper, db_name))
         sudo('%s psql master -c "alter database %s rename to %s_backup"' % (env.db_wrapper, db_name, db_name))
         sudo('%s createdb -E UTF-8 -O %s %s' % (env.db_wrapper, db_user, db_name))
         sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (env.db_wrapper, db_name))
         sudo('%s psql -U %s -d %s -f %s' % (env.db_wrapper, db_user, db_name, dump_file_name))
+        sudo('rm -f %s' % dump_file_name)
 
         # Backup and refresh the media
         local('rsync -zPae ssh --delete %s %s:/tmp/ ' % (media_path, env.master))
@@ -423,6 +424,7 @@ def refresh_environment(project_path=None):
             sudo('mv %s %s.backup' % (env.media_source, env.media_source))
         sudo('cp -r %s %s' % (media_path, env.media_source))
         sudo('chown -R %s:%s %s' % (env.project, env.project, env.media_source))
+        sudo('rm -rf %s' % media_path)
 
     manage_run("migrate --noinput")
     manage_run("change_cms_site --from=serviceinfo.rescue.org --to=serviceinfo-staging.rescue.org")
