@@ -4,8 +4,8 @@ import tempfile
 
 import yaml
 
-from fabric.api import env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
-from fabric.colors import red
+from fabric.api import cd, env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
+from fabric.colors import red, green
 from fabric.contrib import files, project
 from fabric.contrib.console import confirm
 from fabric.utils import abort
@@ -27,8 +27,18 @@ VALID_ROLES = (
 )
 
 
+def _common_env():
+    env.project = PROJECT_NAME
+    env.project_root = os.path.join('/var', 'www', env.project)
+    env.media_source = os.path.join(env.project_root, 'public', 'media')
+    env.db_wrapper = os.path.join(env.project_root, 'run_with_db.sh')
+    # refresh_environment() needs this even though the task is run against staging
+    env.production_master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
+
+
 @task
 def staging():
+    _common_env()
     env.environment = 'staging'
     # 54.93.66.254 Staging server on AWS Frankfurt
     # Internal hostname for our own access to the server
@@ -41,6 +51,7 @@ def staging():
 @task
 def testing():
     """TEMPORARY - for testing the open source deploy changes"""
+    _common_env()
     env.environment = 'testing'
     env.master = 'serviceinfo-testing.caktusgroup.com'
     env.hosts = [env.master]
@@ -48,11 +59,12 @@ def testing():
 
 @task
 def production():
+    _common_env()
     env.environment = 'production'
     # Internal hostname for our own access to the server
     # To change the domain, see conf/pillar/<envname>/env.sls
     # env.master = 'serviceinfo.rescue.org'
-    env.master = 'ec2-54-93-51-232.eu-central-1.compute.amazonaws.com'
+    env.master = env.production_master
     env.hosts = [env.master]
 
 
@@ -311,3 +323,118 @@ def ssh():
     """
     require('environment')
     local("ssh %s" % env.hosts[0])
+
+
+@task
+def get_db_dump(clean=False):
+    """Get db dump of remote enviroment."""
+    require('environment')
+    db_name = '%(project)s_%(environment)s' % env
+    dump_file = db_name + '.sql' % env
+    temp_file = os.path.join(env.project_root, dump_file)
+    flags = '-Ox'
+    if clean:
+        flags += 'c'
+    dump_command = '%s pg_dump %s %s -U %s > %s' % (env.db_wrapper, flags, db_name, db_name, temp_file)
+    with settings(host_string=env.master):
+        sudo(dump_command, user=env.project)
+        get(temp_file, dump_file)
+
+
+@task
+def reset_local_db():
+    """ Reset local database from remote host """
+    require('environment')
+    question = 'Are you sure you want to reset your local ' \
+               'database with the %(environment)s database?' % env
+    if not confirm(question, default=False):
+        abort('Local database reset aborted.')
+    remote_db_name = '%(project)s_%(environment)s' % env
+    db_dump_name = remote_db_name + '.sql'
+    local_db_name = env.project
+    get_db_dump()
+    with settings(warn_only=True):
+        local('dropdb %s' % local_db_name)
+    local('createdb -E UTF-8 %s' % local_db_name)
+    local('psql %s -c "CREATE EXTENSION postgis;"' % local_db_name)
+    local('cat %s | psql %s' % (db_dump_name, local_db_name))
+
+
+@task
+def reset_local_media(service_info_directory):
+    """ Reset local media from remote host """
+    require('environment')
+    media_target = os.path.join(service_info_directory, 'public')
+    with settings():
+        local("rsync -rvaz %s:%s %s" % (env.master, env.media_source, media_target))
+
+
+@task
+def refresh_environment(project_path=None):
+    """
+    Refresh any non-production environment with new DB data and new media.
+
+    If ``project_path`` is not provided, then we get a DB dump and media from production.
+
+    If ``project_path`` is provided, then we get the DB dump and media from inside the
+    ``project_path``. We expect the dump to be at ``${project_path}/service_info.sql`` and
+    the media to be at ``${project_path}/public/media``.
+    """
+    require('environment')
+    if env.environment == 'production':
+        abort('Production cannot be refreshed!')
+    dump_file_name = '%(project)s.sql' % env
+    media_path = 'media'
+    db_name = db_user = '%s_%s' % (env.project, env.environment)
+
+    if project_path is None:
+        # We are refreshing from the live production server
+        prod_dump_file_path = os.path.join('/tmp', dump_file_name)
+
+        with settings(host_string=env.production_master):
+            prod_db_name = '%(project)s_production' % env
+            sudo('%s pg_dump -Ox %s -U %s > %s' % (env.db_wrapper, prod_db_name, prod_db_name, prod_dump_file_path))
+            get(prod_dump_file_path, dump_file_name)
+            get(env.media_source, media_path)
+            sudo('rm -f %s' % prod_dump_file_path)
+    else:
+        # We are refreshing from files in the local project_path directory
+        current_dump_path = os.path.join(project_path, dump_file_name)
+        current_media_path = os.path.join(project_path, 'public', media_path)
+        local('cp %s %s' % (current_dump_path, dump_file_name))
+        local('cp -r %s .' % current_media_path)
+
+    with cd('/tmp'):
+        put(local_path=dump_file_name, remote_path=dump_file_name)
+        # stop the servers
+        sudo('supervisorctl stop all')
+
+        # Backup DB, create fresh DB, and install dump into it
+        sudo('%s dropdb --if-exists %s_backup' % (env.db_wrapper, db_name))
+        sudo('%s psql master -c "alter database %s rename to %s_backup"' % (env.db_wrapper, db_name, db_name))
+        sudo('%s createdb -E UTF-8 -O %s %s' % (env.db_wrapper, db_user, db_name))
+        sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (env.db_wrapper, db_name))
+        sudo('%s psql -U %s -d %s -f %s' % (env.db_wrapper, db_user, db_name, dump_file_name))
+        sudo('rm -f %s' % dump_file_name)
+
+        # Backup and refresh the media
+        local('rsync -zPae ssh --delete %s %s:/tmp/ ' % (media_path, env.master))
+        sudo('rm -rf %s.backup' % env.media_source)
+        with settings(warn_only=True):
+            sudo('mv %s %s.backup' % (env.media_source, env.media_source))
+        sudo('cp -r %s %s' % (media_path, env.media_source))
+        sudo('chown -R %s:%s %s' % (env.project, env.project, env.media_source))
+        sudo('rm -rf %s' % media_path)
+
+    manage_run("migrate --noinput")
+    manage_run("change_cms_site --from=serviceinfo.rescue.org --to=serviceinfo-staging.rescue.org")
+    manage_run("rebuild_index --noinput")
+    sudo('supervisorctl start all')
+    local('rm -rf %s %s' % (dump_file_name, media_path))
+
+
+@task
+def refresh_from_backup(project_path):
+    refresh_environment(project_path)
+    print(green('Backup has been restored. It sometimes takes a few minutes for the load '
+                'balancer to realize things are healthy again.'))
