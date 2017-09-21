@@ -5,7 +5,7 @@ import tempfile
 import yaml
 
 from fabric.api import cd, env, execute, get, hide, lcd, local, put, require, run, settings, sudo, task
-from fabric.colors import red
+from fabric.colors import red, green
 from fabric.contrib import files, project
 from fabric.contrib.console import confirm
 from fabric.utils import abort
@@ -370,35 +370,71 @@ def reset_local_media(service_info_directory):
 
 
 @task
-def refresh_environment():
-    # NOTE: This command does not function yet.
-    # See: https://github.com/theirc/ServiceInfo-ircdeploy/pull/16#issue-125613744
+def refresh_environment(project_path=None):
+    """
+    Refresh any non-production environment with new DB data and new media.
+
+    If ``project_path`` is not provided, then we get a DB dump and media from production.
+
+    If ``project_path`` is provided, then we get the DB dump and media from inside the
+    ``project_path``. We expect the dump to be at ``${project_path}/service_info.sql`` and
+    the media to be at ``${project_path}/public/media``.
+    """
     require('environment')
     if env.environment == 'production':
         abort('Production cannot be refreshed!')
-    env.source_environment = 'production'
-
-    prod_db_name = '%(project)s_%(source_environment)s' % env
-    dump_file_name = '%s.sql' % prod_db_name
-    full_dump_file_path = os.path.join(env.project_root, dump_file_name)
-    prod_host = env.production_master
-
-    with settings(host_string=prod_host):
-        sudo('%s pg_dump -Ox %s -U %s > %s' % (env.db_wrapper, prod_db_name, prod_db_name, full_dump_file_path))
-
+    dump_file_name = '%(project)s.sql' % env
+    media_path = 'media'
     db_name = db_user = '%s_%s' % (env.project, env.environment)
+
+    if project_path is None:
+        # We are refreshing from the live production server
+        prod_dump_file_path = os.path.join('/tmp', dump_file_name)
+
+        with settings(host_string=env.production_master):
+            prod_db_name = '%(project)s_production' % env
+            sudo('%s pg_dump -Ox %s -U %s > %s' % (env.db_wrapper, prod_db_name, prod_db_name, prod_dump_file_path))
+            get(prod_dump_file_path, dump_file_name)
+            get(env.media_source, media_path)
+            sudo('rm -f %s' % prod_dump_file_path)
+    else:
+        # We are refreshing from files in the local project_path directory
+        current_dump_path = os.path.join(project_path, dump_file_name)
+        current_media_path = os.path.join(project_path, 'public', media_path)
+        local('cp %s %s' % (current_dump_path, dump_file_name))
+        local('cp -r %s .' % current_media_path)
+
     with cd('/tmp'):
-        run('scp %s:%s %s' % (prod_host, full_dump_file_path, dump_file_name))
-        with settings(warn_only=True):
-            sudo('%s dropdb %s_backup' % (env.db_wrapper, db_name))
-        sudo('%s psql -c "alter database %s rename to %s_backup"' % (env.db_wrapper, db_name, db_name))
+        put(local_path=dump_file_name, remote_path=dump_file_name)
+        # stop the servers
+        sudo('supervisorctl stop all')
+
+        # Backup DB, create fresh DB, and install dump into it
+        sudo('%s dropdb --if-exists %s_backup' % (env.db_wrapper, db_name))
+        sudo('%s psql master -c "alter database %s rename to %s_backup"' % (env.db_wrapper, db_name, db_name))
         sudo('%s createdb -E UTF-8 -O %s %s' % (env.db_wrapper, db_user, db_name))
         sudo('%s psql %s -c "CREATE EXTENSION postgis;"' % (env.db_wrapper, db_name))
         sudo('%s psql -U %s -d %s -f %s' % (env.db_wrapper, db_user, db_name, dump_file_name))
-        run('rsync -zPae ssh %s:%s .' % (prod_host, env.media_source))
-        sudo('rm -rf %s.backup' % env.media_source)
-        sudo('mv %s %s.backup' % (env.media_source, env.media_source))
-        sudo('mv media %s' % env.media_source)
-        sudo('chown -R %s:%s %s' % (env.project, env.project, env.media_source))
+        sudo('rm -f %s' % dump_file_name)
 
-    manage_run("migrate")
+        # Backup and refresh the media
+        local('rsync -zPae ssh --delete %s %s:/tmp/ ' % (media_path, env.master))
+        sudo('rm -rf %s.backup' % env.media_source)
+        with settings(warn_only=True):
+            sudo('mv %s %s.backup' % (env.media_source, env.media_source))
+        sudo('cp -r %s %s' % (media_path, env.media_source))
+        sudo('chown -R %s:%s %s' % (env.project, env.project, env.media_source))
+        sudo('rm -rf %s' % media_path)
+
+    manage_run("migrate --noinput")
+    manage_run("change_cms_site --from=serviceinfo.rescue.org --to=serviceinfo-staging.rescue.org")
+    manage_run("rebuild_index --noinput")
+    sudo('supervisorctl start all')
+    local('rm -rf %s %s' % (dump_file_name, media_path))
+
+
+@task
+def refresh_from_backup(project_path):
+    refresh_environment(project_path)
+    print(green('Backup has been restored. It sometimes takes a few minutes for the load '
+                'balancer to realize things are healthy again.'))
