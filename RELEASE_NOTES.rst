@@ -2,6 +2,12 @@ ServiceInfo
 
 Release Notes
 
+0.3.0 - Sep. 21, 2017
+---------------------
+
+* Add fab command to help when restoring from backups (See accompanying documentation in ServiceInfo
+  repo)
+
 0.2.12 - Sep. 13, 2017
 ----------------------
 
