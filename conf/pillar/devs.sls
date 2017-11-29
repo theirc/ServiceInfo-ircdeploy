@@ -1,8 +1,5 @@
 # This should be a list of developer users and their public SSH keys
 users:
-  trawick:
-    public_key:
-      - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDAdX6zHUvXSdFkqDOlcqWmHb8Gm+McbS1+uLDJzulyGjpbIU/6qRxnIWdmqx75sgMNhMqzPZIsHTh1LBcmeAhodBLy1wX9tn7FgxPqrlprQxZbZCnCFT3zcXoqyGcvH2ZqhQ1lbVPaD5O7yD4RCuOInFFGuQOmVSjoJt58S5KiO2soVYTzxjf46vCxYnmLhscbUd54gJWAWzmqCwuJ3L1FlVi0Vw9KKCXN+0Zav5R3UFcUUQu4YhmBHgDqoxUttY2tKsyTqBo/DSddr0KPysRzFB/i302Xlg1f4vG/VzTeywyS+Jrt3c3EIX1ofbWDHZYGCormfD3LmsZTJRrE589J trawick@trawick-ip
   nmashton:
     public_key:
       - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDN4FV20g1PVrfOakM3LHBrd8Ei6q3TK5XsQNIOHcgVaZuAbYZ6WghUAAeukU+3fYQII2nmZ5FZgfnoBRhPKXa9Qm3yRpEkwzF3W4H40BY2F1fWyfNQuO8C8B4dOQoMbCC53DBGoWdpDYB4FcQ6f404ooAJ4ESM4BOLgMPHJqUygmQZ+Krrwwe8x8+g+guOjgS0Jy4AFYiE1Wr7NA2K2ZVZuSg2k/Lrd4K4173fxbToVxcBjNI+IXRKrWDiz9tpHyP40IltO/TuG08m3N/oTLaM78e1zUHW5iXxaHgzuHNTAkGc+fgzpjaHS5fKQ+YbYUXBxk1SRMKu14v82oXB+hPR nmashton@quaderno.local
